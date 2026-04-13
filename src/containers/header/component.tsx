@@ -40,7 +40,11 @@ import {
   showTaskProgress,
   vexComfirmAsync,
 } from "../../utils/common";
-import { driveList } from "../../constants/driveList";
+import {
+  getDriveLabel,
+  isDrivePro,
+  shouldPromptEnableKoodoSync,
+} from "../../utils/dataSource";
 import SupportDialog from "../../components/dialogs/supportDialog";
 import SyncService from "../../utils/storage/syncService";
 import { LocalFileManager } from "../../utils/file/localFile";
@@ -304,9 +308,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
           "The default sync options in the local and cloud are inconsistent, please set the local default sync option to "
         ) +
           this.props.t(
-            driveList.find(
-              (item) => item.value === this.props.userInfo.default_sync_option
-            )?.label || ""
+            getDriveLabel(this.props.userInfo.default_sync_option)
           ),
         {
           duration: 4000,
@@ -367,12 +369,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
       toast.loading(
         this.props.t("Start syncing") +
           " (" +
-          this.props.t(
-            driveList.find(
-              (item) =>
-                item.value === ConfigService.getItem("defaultSyncOption")
-            )?.label || ""
-          ) +
+          this.props.t(getDriveLabel(ConfigService.getItem("defaultSyncOption"))) +
           ")",
         { id: "syncing", position: "bottom-center" }
       );
@@ -471,13 +468,7 @@ class Header extends React.Component<HeaderProps, HeaderState> {
         if (
           ConfigService.getReaderConfig("isFirstSync") !== "no" &&
           ConfigService.getReaderConfig("isEnableKoodoSync") !== "yes" &&
-          this.props.defaultSyncOption !== "webdav" &&
-          this.props.defaultSyncOption !== "ftp" &&
-          this.props.defaultSyncOption !== "sftp" &&
-          this.props.defaultSyncOption !== "smb" &&
-          this.props.defaultSyncOption !== "s3compatible" &&
-          this.props.defaultSyncOption !== "icloud" &&
-          this.props.defaultSyncOption !== "docker"
+          shouldPromptEnableKoodoSync(this.props.defaultSyncOption)
         ) {
           ConfigService.setReaderConfig("isFirstSync", "no");
           let result = await vexComfirmAsync(
@@ -686,7 +677,11 @@ class Header extends React.Component<HeaderProps, HeaderState> {
           <div
             className="setting-icon-container"
             onClick={async () => {
-              if (!isElectron && !this.props.isAuthed) {
+              if (
+                !isElectron &&
+                !this.props.isAuthed &&
+                isDrivePro(this.props.defaultSyncOption)
+              ) {
                 toast(
                   this.props.t("Please upgrade to Pro to use this feature")
                 );

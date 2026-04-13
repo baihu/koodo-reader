@@ -1,9 +1,7 @@
 import React from "react";
 import "./importDialog.css";
-import { driveList } from "../../../constants/driveList";
 import { Trans } from "react-i18next";
 import { ImportDialogProps, ImportDialogState } from "./interface";
-import _ from "underscore";
 import toast from "react-hot-toast";
 import { isElectron } from "react-device-detect";
 import { getCloudConfig } from "../../../utils/file/common";
@@ -16,6 +14,12 @@ import {
   showDownloadProgress,
   supportedFormats,
 } from "../../../utils/common";
+import {
+  getVisibleDriveList,
+  isDrivePro,
+  isDriveSupportedInCurrentPlatform,
+  isOAuthDrive,
+} from "../../../utils/dataSource";
 import {
   KookitConfig,
   SyncUtil,
@@ -61,10 +65,15 @@ class ImportDialog extends React.Component<
       );
       return;
     }
-    if (
-      driveList.find((item) => item.value === event.target.value)?.isPro &&
-      !this.props.isAuthed
-    ) {
+    if (!isDriveSupportedInCurrentPlatform(event.target.value)) {
+      toast(
+        this.props.t(
+          "Koodo Reader's web version are limited by the browser, for more powerful features, please download the desktop version."
+        )
+      );
+      return;
+    }
+    if (isDrivePro(event.target.value) && !this.props.isAuthed) {
       toast(this.props.t("Please upgrade to Pro to use this feature"));
       this.props.handleSetting(true);
       this.props.handleSettingMode("account");
@@ -377,18 +386,14 @@ class ImportDialog extends React.Component<
         <div className="import-dialog-option">
           {this.state.currentDrive === "" && (
             <>
-              {driveList
-                .filter(
-                  (item) =>
-                    !item.scoped &&
-                    item.support.includes(isElectron ? "desktop" : "browser")
-                )
+              {getVisibleDriveList()
+                .filter((item) => !item.scoped)
                 .map((item) => (
                   <div
                     key={item.value}
                     className={`cloud-drive-item `}
                     onClick={() => {
-                      if (!this.props.isAuthed) {
+                      if (isDrivePro(item.value) && !this.props.isAuthed) {
                         toast(
                           this.props.t(
                             "Please upgrade to Pro to use this feature"
@@ -404,18 +409,7 @@ class ImportDialog extends React.Component<
                         this.props.handleSettingMode("sync");
                         this.props.handleSettingDrive(item.value);
                         let settingDrive = item.value;
-                        if (
-                          settingDrive === "dropbox" ||
-                          settingDrive === "yandex" ||
-                          settingDrive === "yiyiwu" ||
-                          settingDrive === "dubox" ||
-                          settingDrive === "google" ||
-                          settingDrive === "boxnet" ||
-                          settingDrive === "pcloud" ||
-                          settingDrive === "adrive" ||
-                          settingDrive === "microsoft_exp" ||
-                          settingDrive === "microsoft"
-                        ) {
+                        if (isOAuthDrive(settingDrive)) {
                           openInBrowser(
                             new SyncUtil(settingDrive, {}).getAuthUrl(
                               getServerRegion() === "china" &&

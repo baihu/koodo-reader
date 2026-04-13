@@ -1,4 +1,15 @@
-export const driveList = [
+export type DrivePlatform = "desktop" | "browser" | "phone";
+
+export interface DriveItem {
+  label: string;
+  value: string;
+  icon: string;
+  isPro: boolean;
+  support: DrivePlatform[];
+  scoped: boolean;
+}
+
+export const driveList: DriveItem[] = [
   {
     label: "WebDAV",
     value: "webdav",
@@ -11,7 +22,7 @@ export const driveList = [
     label: "S3 Compatible",
     value: "s3compatible",
     icon: "icon-s3compatible",
-    isPro: true,
+    isPro: false,
     support: ["desktop", "browser", "phone"],
     scoped: false,
   },
@@ -141,7 +152,7 @@ export const driveList = [
     scoped: false,
   },
 ];
-interface ConfigItem {
+export interface ConfigItem {
   label: string;
   value: string;
   type: string;
@@ -150,8 +161,7 @@ interface ConfigItem {
   note?: string;
 }
 
-// Type the driveInputConfig
-interface DriveInputConfig {
+export interface DriveInputConfig {
   [key: string]: ConfigItem[];
 }
 export const driveInputConfig: DriveInputConfig = {

@@ -7,11 +7,16 @@ import { Trans } from "react-i18next";
 import { BackupDialogProps, BackupDialogState } from "./interface";
 import Lottie from "react-lottie";
 import animationSuccess from "../../../assets/lotties/success.json";
-import _ from "underscore";
 import toast from "react-hot-toast";
 import { isElectron } from "react-device-detect";
 import { TokenService } from "../../../assets/lib/kookit-extra-browser.min";
 import { generateSyncRecord } from "../../../utils/common";
+import {
+  formatDriveOptionLabel,
+  isDrivePro,
+  isDriveSupportedInCurrentPlatform,
+  isDriveVisibleInCurrentEnvironment,
+} from "../../../utils/dataSource";
 const successOptions = {
   loop: false,
   autoplay: true,
@@ -107,10 +112,9 @@ class BackupDialog extends React.Component<
   };
   handleSelectSource = (event: any) => {
     if (
-      !driveList
-        .find((item) => item.value === event.target.value)
-        ?.support.includes("browser") &&
-      !isElectron
+      event.target.value !== "local" &&
+      event.target.value !== "add" &&
+      !isDriveSupportedInCurrentPlatform(event.target.value)
     ) {
       toast(
         this.props.t(
@@ -119,10 +123,7 @@ class BackupDialog extends React.Component<
       );
       return;
     }
-    if (
-      driveList.find((item) => item.value === event.target.value)?.isPro &&
-      !this.props.isAuthed
-    ) {
+    if (isDrivePro(event.target.value) && !this.props.isAuthed) {
       toast(this.props.t("Please upgrade to Pro to use this feature"));
       this.props.handleSetting(true);
       this.props.handleSettingMode("account");
@@ -161,9 +162,10 @@ class BackupDialog extends React.Component<
                   ]
                     .filter(
                       (item) =>
-                        this.props.dataSourceList.includes(item.value) ||
                         item.value === "local" ||
-                        item.value === "add"
+                        item.value === "add" ||
+                        (this.props.dataSourceList.includes(item.value) &&
+                          isDriveVisibleInCurrentEnvironment(item.value))
                     )
                     .map((item) => (
                       <option
@@ -171,9 +173,7 @@ class BackupDialog extends React.Component<
                         key={item.value}
                         className="lang-setting-option"
                       >
-                        {this.props.t(item.label) +
-                          " " +
-                          (item.isPro ? "(Pro)" : "")}
+                        {this.props.t(formatDriveOptionLabel(item))}
                       </option>
                     ))}
                 </select>
@@ -210,9 +210,10 @@ class BackupDialog extends React.Component<
                   ]
                     .filter(
                       (item) =>
-                        this.props.dataSourceList.includes(item.value) ||
                         item.value === "local" ||
-                        item.value === "add"
+                        item.value === "add" ||
+                        (this.props.dataSourceList.includes(item.value) &&
+                          isDriveVisibleInCurrentEnvironment(item.value))
                     )
                     .map((item) => (
                       <option
@@ -220,9 +221,7 @@ class BackupDialog extends React.Component<
                         key={item.value}
                         className="lang-setting-option"
                       >
-                        {this.props.t(item.label) +
-                          " " +
-                          (item.isPro ? "(Pro)" : "")}
+                        {this.props.t(formatDriveOptionLabel(item))}
                       </option>
                     ))}
                 </select>

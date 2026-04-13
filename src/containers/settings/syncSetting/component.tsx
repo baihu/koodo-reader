@@ -4,7 +4,6 @@ import { Trans } from "react-i18next";
 import i18n from "../../../i18n";
 import { removeCloudConfig } from "../../../utils/file/common";
 import { isElectron } from "react-device-detect";
-import _ from "underscore";
 import { syncSettingList } from "../../../constants/settingList";
 
 import toast from "react-hot-toast";
@@ -24,6 +23,17 @@ import {
 } from "../../../utils/common";
 
 import { driveInputConfig, driveList } from "../../../constants/driveList";
+import {
+  formatDriveOptionLabel,
+  getBrowserCompatibilityTip,
+  getVisibleDriveList,
+  isDrivePro,
+  isDriveSupportedInCurrentPlatform,
+  isManualConfigDrive,
+  isOAuthDrive,
+  shouldCheckCorsBeforeBinding,
+  shouldShowDriveHelpLink,
+} from "../../../utils/dataSource";
 import {
   ConfigService,
   KookitConfig,
@@ -74,12 +84,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     if (!targetDrive) {
       return;
     }
-    if (
-      !driveList
-        .find((item) => item.value === targetDrive)
-        ?.support.includes("browser") &&
-      !isElectron
-    ) {
+    if (!isDriveSupportedInCurrentPlatform(targetDrive)) {
       toast(
         this.props.t(
           "Koodo Reader's web version are limited by the browser, for more powerful features, please download the desktop version."
@@ -87,10 +92,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
       );
       return;
     }
-    if (
-      driveList.find((item) => item.value === targetDrive)?.isPro &&
-      !this.props.isAuthed
-    ) {
+    if (isDrivePro(targetDrive) && !this.props.isAuthed) {
       toast(this.props.t("Please upgrade to Pro to use this feature"));
       this.props.handleSetting(true);
       this.props.handleSettingMode("account");
@@ -236,14 +238,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     if (!flag) {
       return;
     }
-    if (
-      this.props.settingDrive === "webdav" ||
-      this.props.settingDrive === "docker" ||
-      this.props.settingDrive === "ftp" ||
-      this.props.settingDrive === "sftp" ||
-      this.props.settingDrive === "mega" ||
-      this.props.settingDrive === "s3compatible"
-    ) {
+    if (isManualConfigDrive(this.props.settingDrive)) {
       toast.loading(i18n.t("Adding"), { id: "adding-sync-id" });
       let res = await encryptToken(
         this.props.settingDrive,
@@ -384,6 +379,12 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
     });
   };
   render() {
+    const browserTip = getBrowserCompatibilityTip(this.props.settingDrive);
+    const lang = ConfigService.getReaderConfig("lang");
+    const visibleDriveList = getVisibleDriveList();
+    const isManualDrive = isManualConfigDrive(this.props.settingDrive);
+    const isOauthDrive = isOAuthDrive(this.props.settingDrive);
+
     return (
       <>
         {this.props.settingDrive && (
@@ -395,12 +396,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
               fontWeight: 500,
             }}
           >
-            {this.props.settingDrive === "webdav" ||
-            this.props.settingDrive === "docker" ||
-            this.props.settingDrive === "ftp" ||
-            this.props.settingDrive === "sftp" ||
-            this.props.settingDrive === "mega" ||
-            this.props.settingDrive === "s3compatible" ? (
+            {isManualDrive ? (
               <>
                 {driveInputConfig[this.props.settingDrive].map((item) => {
                   return (
@@ -504,7 +500,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                 />
               </>
             )}
-            {this.props.settingDrive === "webdav" && !isElectron && (
+            {browserTip && (
               <div
                 className="token-dialog-tip"
                 style={{
@@ -514,60 +510,21 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                   color: "rgba(231, 69, 69, 0.8)",
                 }}
               >
-                {this.props.t(
-                  "Only WebDAV service provided by Alist is directly supported in Browser, Other WebDAV services need to enable CORS to work properly. Also due to browser's security restrictions, the WebDAV service must be accessed via HTTPS protocol when you're visiting Koodo Reader via HTTPS protocol."
-                )}
-              </div>
-            )}
-            {this.props.settingDrive === "docker" && !isElectron && (
-              <div
-                className="token-dialog-tip"
-                style={{
-                  marginTop: "10px",
-                  fontSize: "13px",
-                  lineHeight: "16px",
-                  color: "rgba(231, 69, 69, 0.8)",
-                }}
-              >
-                {this.props.t(
-                  "The Koodo Reader Docker version does not support the data source feature by default. You need to modify the configuration parameters during deployment to manually enable it. Also due to browser's security restrictions, the Docker service must be accessed via HTTPS protocol when you're visiting Koodo Reader via HTTPS protocol."
-                )}
-              </div>
-            )}
-            {this.props.settingDrive === "s3compatible" && !isElectron && (
-              <div
-                className="token-dialog-tip"
-                style={{
-                  marginTop: "10px",
-                  fontSize: "13px",
-                  lineHeight: "16px",
-                  color: "rgba(231, 69, 69, 0.8)",
-                }}
-              >
-                {this.props.t(
-                  "Some S3 services are not compatible with browser environments. If you encounter connection issues, please refer to the service provider's official documentation for instructions on enabling CORS. Also due to browser's security restrictions, the S3 service must be accessed via HTTPS protocol when you're visiting Koodo Reader via HTTPS protocol."
-                )}
+                {this.props.t(browserTip)}
               </div>
             )}
             <div className="token-dialog-button-container">
               <div
                 className="voice-add-confirm"
                 onClick={async () => {
-                  if (this.props.settingDrive === "webdav") {
+                  if (shouldCheckCorsBeforeBinding(this.props.settingDrive)) {
                     let corsResult = await testCORS(this.state.driveConfig.url);
 
                     if (!corsResult) {
                       return;
                     }
                   }
-                  if (
-                    this.props.settingDrive === "webdav" ||
-                    this.props.settingDrive === "docker" ||
-                    this.props.settingDrive === "ftp" ||
-                    this.props.settingDrive === "sftp" ||
-                    this.props.settingDrive === "mega" ||
-                    this.props.settingDrive === "s3compatible"
-                  ) {
+                  if (isManualDrive) {
                     let connectionResult = await testConnection(
                       this.props.settingDrive,
                       this.state.driveConfig
@@ -591,16 +548,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                 >
                   <Trans>Cancel</Trans>
                 </div>
-                {(this.props.settingDrive === "dropbox" ||
-                  this.props.settingDrive === "dubox" ||
-                  this.props.settingDrive === "yandex" ||
-                  this.props.settingDrive === "yiyiwu" ||
-                  this.props.settingDrive === "google" ||
-                  this.props.settingDrive === "boxnet" ||
-                  this.props.settingDrive === "pcloud" ||
-                  this.props.settingDrive === "adrive" ||
-                  this.props.settingDrive === "microsoft_exp" ||
-                  this.props.settingDrive === "microsoft") && (
+                {isOauthDrive && (
                   <div
                     className="voice-add-confirm"
                     style={{ marginRight: "10px" }}
@@ -622,17 +570,12 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                     <Trans>Authorize</Trans>
                   </div>
                 )}
-                {(this.props.settingDrive === "webdav" ||
-                  this.props.settingDrive === "docker" ||
-                  this.props.settingDrive === "ftp" ||
-                  this.props.settingDrive === "sftp" ||
-                  this.props.settingDrive === "mega" ||
-                  this.props.settingDrive === "s3compatible") && (
+                {isManualDrive && (
                   <div
                     className="voice-add-confirm"
                     style={{ marginRight: "10px" }}
                     onClick={async () => {
-                      if (this.props.settingDrive === "webdav") {
+                      if (shouldCheckCorsBeforeBinding(this.props.settingDrive)) {
                         let corsResult = await testCORS(
                           this.state.driveConfig.url
                         );
@@ -649,12 +592,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                     <Trans>Test</Trans>
                   </div>
                 )}
-                {(this.props.settingDrive === "webdav" ||
-                  this.props.settingDrive === "ftp" ||
-                  this.props.settingDrive === "s3compatible" ||
-                  this.props.settingDrive === "sftp") &&
-                  ConfigService.getReaderConfig("lang") &&
-                  ConfigService.getReaderConfig("lang").startsWith("zh") && (
+                {shouldShowDriveHelpLink(this.props.settingDrive, lang) && (
                     <div
                       className="voice-add-cancel"
                       style={{ borderWidth: 0, lineHeight: "30px" }}
@@ -683,22 +621,9 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                 isPro: false,
                 support: ["desktop", "browser", "phone"],
               },
-              ...driveList,
+              ...visibleDriveList,
             ]
               .filter((item) => !this.props.dataSourceList.includes(item.value))
-              .filter((item) => {
-                if (!isElectron) {
-                  return item.support.includes("browser");
-                } else {
-                  return true;
-                }
-              })
-              .filter((item) => {
-                if (isElectron && process.platform !== "darwin") {
-                  return item.value !== "icloud";
-                }
-                return true;
-              })
               .map((item) => (
                 <option
                   value={item.value}
@@ -708,7 +633,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                     item.value === this.props.settingDrive ? true : false
                   }
                 >
-                  {this.props.t(item.label) + (item.isPro ? " (Pro)" : "")}
+                  {this.props.t(formatDriveOptionLabel(item))}
                 </option>
               ))}
           </select>
@@ -732,7 +657,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                   key={item.value}
                   className="lang-setting-option"
                 >
-                  {this.props.t(item.label) + (item.isPro ? " (Pro)" : "")}
+                  {this.props.t(formatDriveOptionLabel(item))}
                 </option>
               ))}
           </select>
@@ -795,7 +720,7 @@ class SyncSetting extends React.Component<SettingInfoProps, SettingInfoState> {
                       item.value === this.props.defaultSyncOption ? true : false
                     }
                   >
-                    {this.props.t(item.label) + (item.isPro ? " (Pro)" : "")}
+                    {this.props.t(formatDriveOptionLabel(item))}
                   </option>
                 ))}
             </select>

@@ -27,7 +27,10 @@ import {
 } from "./file/common";
 import SyncService from "./storage/syncService";
 import localforage from "localforage";
-import { driveList } from "../constants/driveList";
+import {
+  canBootstrapDriveFromCloudSync,
+  getDriveLabel,
+} from "./dataSource";
 import { updateUserConfig } from "./request/user";
 import { languageCNMap, languageENMap } from "../constants/ttsList";
 import { BookHelper } from "../assets/lib/kookit.min";
@@ -937,12 +940,7 @@ export const showTaskProgress = async (
             stats.total +
             ")" +
             " (" +
-            i18n.t(
-              driveList.find(
-                (item) =>
-                  item.value === ConfigService.getItem("defaultSyncOption")
-              )?.label || ""
-            ) +
+            i18n.t(getDriveLabel(ConfigService.getItem("defaultSyncOption"))) +
             ")",
           {
             id: "syncing",
@@ -962,12 +960,7 @@ export const showTaskProgress = async (
             stats.total +
             ")" +
             " (" +
-            i18n.t(
-              driveList.find(
-                (item) =>
-                  item.value === ConfigService.getItem("defaultSyncOption")
-              )?.label || ""
-            ) +
+            i18n.t(getDriveLabel(ConfigService.getItem("defaultSyncOption"))) +
             ")",
           {
             id: "syncing",
@@ -1068,26 +1061,9 @@ export const handleAutoCloudSync = async () => {
   if (
     syncRes.code === 200 &&
     syncRes.data.default_sync_option &&
-    syncRes.data.default_sync_option !== "icloud" &&
     syncRes.data.default_sync_token
   ) {
-    let supportedSources = driveList
-      .filter((item) => {
-        if (isElectron) {
-          return item.support.includes("desktop");
-        } else {
-          return item.support.includes("browser");
-        }
-      })
-      .map((item) => item.value);
-    if (!supportedSources.includes(syncRes.data.default_sync_option)) {
-      return false;
-    }
-    if (
-      !isElectron &&
-      (syncRes.data.default_sync_option === "webdav" ||
-        syncRes.data.default_sync_option === "s3compatible")
-    ) {
+    if (!canBootstrapDriveFromCloudSync(syncRes.data.default_sync_option)) {
       return false;
     }
     ConfigService.setItem(

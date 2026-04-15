@@ -57,6 +57,12 @@
 - Night mode and theme color
 - Text highlighting, underline, boldness, italics, and shadow
 
+## WebDAV Compatibility
+
+- The desktop app now supports WebDAV providers that only accept Zotero-compatible requests.
+- In `Settings -> Sync and backup -> WebDAV`, set `Client type` to `zotero` when a provider rejects generic WebDAV clients. `https://data.cstcloud.cn/dav` is auto-detected.
+- This compatibility mode works for sync, backup, and browsing/importing books from supported WebDAV storage in the desktop app.
+
 ## Installation
 
 ### Desktop version: [Download](https://koodoreader.com/en/download)

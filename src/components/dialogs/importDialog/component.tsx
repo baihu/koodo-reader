@@ -50,6 +50,10 @@ class ImportDialog extends React.Component<
     };
   }
   handleClose = () => {
+    if (this.props.embedded) {
+      this.props.history.push("/manager/home");
+      return;
+    }
     this.props.handleImportDialog(false);
   };
 
@@ -375,13 +379,27 @@ class ImportDialog extends React.Component<
     }
   };
   render() {
+    const isEmbedded = Boolean(this.props.embedded);
+    const containerStyle = isEmbedded
+      ? {
+          top: "75px",
+          left: this.props.isCollapsed ? "100px" : "220px",
+          width: this.props.isCollapsed
+            ? "calc(100vw - 100px)"
+            : "calc(100vw - 220px)",
+          height: "calc(100vh - 75px)",
+        }
+      : { height: "450px", top: "calc(50% - 225px)" };
+
     return (
       <div
-        className="backup-page-container"
-        style={{ height: "450px", top: "calc(50% - 225px)" }}
+        className={`backup-page-container${
+          isEmbedded ? " cloud-library-page-container" : ""
+        }`}
+        style={containerStyle}
       >
         <div className="backup-dialog-title">
-          <Trans>From cloud storage</Trans>
+          <Trans>{isEmbedded ? "Cloud Library" : "From cloud storage"}</Trans>
         </div>
         <div className="import-dialog-option">
           {this.state.currentDrive === "" && (
@@ -579,14 +597,16 @@ class ImportDialog extends React.Component<
           {this.props.t("Back to parent")}
         </div>
 
-        <div
-          className="backup-page-close-icon"
-          onClick={() => {
-            this.handleClose();
-          }}
-        >
-          <span className="icon-close backup-close-icon"></span>
-        </div>
+        {!isEmbedded && (
+          <div
+            className="backup-page-close-icon"
+            onClick={() => {
+              this.handleClose();
+            }}
+          >
+            <span className="icon-close backup-close-icon"></span>
+          </div>
+        )}
       </div>
     );
   }

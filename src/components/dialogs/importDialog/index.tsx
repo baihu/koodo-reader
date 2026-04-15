@@ -19,6 +19,7 @@ const mapStateToProps = (state: stateType) => {
     isOpenImportDialog: state.backupPage.isOpenImportDialog,
     dataSourceList: state.backupPage.dataSourceList,
     importBookFunc: state.book.importBookFunc,
+    isCollapsed: state.sidebar.isCollapsed,
   };
 };
 const actionCreator = {

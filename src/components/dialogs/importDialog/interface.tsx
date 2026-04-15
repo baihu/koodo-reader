@@ -13,7 +13,8 @@ export interface ImportDialogProps extends RouteComponentProps<any> {
   handleSettingDrive: (settingDrive: string) => void;
   isOpenTokenDialog: boolean;
   isAuthed: boolean;
-
+  isCollapsed: boolean;
+  embedded?: boolean;
   dataSourceList: string[];
 }
 export interface ImportDialogState {

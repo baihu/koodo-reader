@@ -69,6 +69,18 @@
   font-size: 16px;
   cursor: pointer;
 }
+.cloud-library-page-container {
+  border-radius: 0;
+  animation: none;
+}
+.cloud-library-page-container .backup-dialog-title {
+  top: 20px;
+}
+.cloud-library-page-container .import-dialog-option {
+  top: 62px;
+  bottom: 60px;
+  width: calc(100% - 20px);
+}
 .cloud-drive-label:hover {
   color: #f16464;
 }

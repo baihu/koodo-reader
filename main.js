@@ -217,13 +217,19 @@ const shouldUseZoteroWebdavCompat = (config = {}) => {
 };
 const normalizeCompatPath = (targetPath = "") =>
   targetPath.replace(/^\/+|\/+$/g, "");
+const joinCompatRemotePath = (...segments) => {
+  const normalizedSegments = segments
+    .map((segment) => normalizeCompatPath(segment))
+    .filter(Boolean);
+  return normalizedSegments.join("/");
+};
 const getCompatRemoteDir = (baseDir, logicalPath) => {
   const normalizedPath = normalizeCompatPath(logicalPath);
   const logicalDir = path.dirname(normalizedPath);
   if (logicalDir === "." || logicalDir === "") {
     return baseDir;
   }
-  return `${baseDir}/${logicalDir}`;
+  return joinCompatRemotePath(baseDir, logicalDir);
 };
 const getCompatObjectKey = (logicalPath) =>
   crypto
@@ -289,7 +295,7 @@ const attachWebdavCompat = (syncUtil, config) => {
   remote.listFileInfos = async function (currentPath) {
     const client = await this.getClient();
     const normalizedPath = normalizeCompatPath(currentPath);
-    const remotePath = normalizedPath ? `${this.dir}/${normalizedPath}` : this.dir;
+    const remotePath = joinCompatRemotePath(this.dir, normalizedPath);
     try {
       const items = await client.getDirectoryContents(remotePath);
       const directories = items
@@ -303,7 +309,10 @@ const attachWebdavCompat = (syncUtil, config) => {
       const metadataFiles = items.filter(
         (item) => item.type === "file" && item.basename.endsWith(".prop")
       );
-      const files = await Promise.all(
+      const compatObjectKeys = new Set(
+        metadataFiles.map((item) => item.basename.slice(0, -5).toUpperCase())
+      );
+      const compatFiles = await Promise.all(
         metadataFiles.map(async (item) => {
           try {
             const metadata = parseCompatMetadata(
@@ -324,7 +333,31 @@ const attachWebdavCompat = (syncUtil, config) => {
           }
         })
       );
-      return [...directories, ...files.filter(Boolean)];
+      const directFiles = items
+        .filter((item) => item.type === "file" && !item.basename.endsWith(".prop"))
+        .filter((item) => {
+          if (!item.basename.endsWith(".zip")) {
+            return true;
+          }
+          return !compatObjectKeys.has(item.basename.slice(0, -4).toUpperCase());
+        })
+        .map((item) => ({
+          name: item.basename,
+          size: item.size || 0,
+          type: "file",
+          modified: item.lastmod,
+        }));
+      const seenFileNames = new Set();
+      const mergedFiles = [...compatFiles.filter(Boolean), ...directFiles].filter(
+        (item) => {
+          if (!item || seenFileNames.has(item.name)) {
+            return false;
+          }
+          seenFileNames.add(item.name);
+          return true;
+        }
+      );
+      return [...directories, ...mergedFiles];
     } catch (error) {
       if (error.response && error.response.status === 404) {
         await this.ensureDirectoryExists(remotePath);
@@ -386,14 +419,19 @@ const attachWebdavCompat = (syncUtil, config) => {
         }
         try {
           const client = await this.getClient();
+          const directPath = joinCompatRemotePath(this.dir, sourcePath);
           const { contentPath } = getCompatPaths(this.dir, sourcePath);
+          let resolvedRemotePath = contentPath;
           if ((await client.exists(contentPath)) === false) {
-            return true;
+            if ((await client.exists(directPath)) === false) {
+              return true;
+            }
+            resolvedRemotePath = directPath;
           }
           const localFilePath = path.join(this.storagePath, destPath);
           fs.mkdirSync(path.dirname(localFilePath), { recursive: true });
           const output = fs.createWriteStream(localFilePath);
-          const input = client.createReadStream(contentPath);
+          const input = client.createReadStream(resolvedRemotePath);
           let downloadedSize = 0;
           input.on("data", (chunk) => {
             downloadedSize += chunk.length;

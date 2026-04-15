@@ -151,7 +151,71 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
             </div>
           </li>
         );
-      });
+        });
+    };
+    const renderCloudLibraryItem = () => {
+      return (
+        <li
+          className={
+            this.props.mode === "cloud-library"
+              ? "active side-menu-item"
+              : "side-menu-item"
+          }
+          id="sidebar-cloud-library"
+          onClick={() => {
+            this.handleSidebar("cloud-library");
+          }}
+          onMouseEnter={() => {
+            this.handleHover("cloud-library");
+          }}
+          onMouseLeave={() => {
+            this.handleHover("");
+          }}
+          style={this.props.isCollapsed ? { width: 40, marginLeft: 15 } : {}}
+        >
+          {this.props.mode === "cloud-library" ? (
+            <div className="side-menu-selector-container"></div>
+          ) : null}
+          {this.state.hoverMode === "cloud-library" ? (
+            <div className="side-menu-hover-container"></div>
+          ) : null}
+          <div
+            className={
+              this.props.mode === "cloud-library"
+                ? "side-menu-selector active-selector"
+                : "side-menu-selector "
+            }
+          >
+            <div
+              className="side-menu-icon"
+              style={this.props.isCollapsed ? {} : { marginLeft: "38px" }}
+            >
+              <span
+                className={
+                  this.props.mode === "cloud-library"
+                    ? "icon-cloud active-icon"
+                    : "icon-cloud"
+                }
+                style={
+                  this.props.isCollapsed
+                    ? { position: "relative", marginLeft: "-9px" }
+                    : {}
+                }
+              ></span>
+            </div>
+
+            <span
+              style={
+                this.props.isCollapsed
+                  ? { display: "none", width: "70%" }
+                  : { width: "60%" }
+              }
+            >
+              {this.props.t("Cloud Library")}
+            </span>
+          </div>
+        </li>
+      );
     };
     const renderSideShelf = () => {
       let sortedShelfList =
@@ -277,6 +341,7 @@ class Sidebar extends React.Component<SidebarProps, SidebarState> {
             style={this.state.isCollapsed ? { width: "70px" } : {}}
           >
             <ul className="side-menu-container">{renderSideMenu()}</ul>
+            <ul className="side-menu-container">{renderCloudLibraryItem()}</ul>
             <div
               className="side-shelf-title-container"
               style={

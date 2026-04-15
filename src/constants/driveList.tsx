@@ -192,6 +192,14 @@ export const driveInputConfig: DriveInputConfig = {
       type: "password",
       required: true,
     },
+    {
+      label: "Client type",
+      value: "clientType",
+      type: "text",
+      required: false,
+      example: "zotero",
+      note: "Enter zotero for providers that only accept Zotero-compatible WebDAV requests",
+    },
   ],
   docker: [
     {

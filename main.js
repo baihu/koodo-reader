@@ -13,6 +13,7 @@ const {
   screen,
 } = require("electron");
 const path = require("path");
+const crypto = require("crypto");
 const isDev = require("electron-is-dev");
 const Store = require("electron-store");
 const log = require("electron-log/main");
@@ -175,7 +176,10 @@ const getDBConnection = (dbName, storagePath, sqlStatement) => {
 const getSyncUtil = async (config, isUseCache = true) => {
   if (!isUseCache || !syncUtilCache[config.service]) {
     const { SyncUtil } = await import("./src/assets/lib/kookit-extra.min.mjs");
-    syncUtilCache[config.service] = new SyncUtil(config.service, config);
+    syncUtilCache[config.service] = attachWebdavCompat(
+      new SyncUtil(config.service, config),
+      config
+    );
   }
   return syncUtilCache[config.service];
 };
@@ -188,7 +192,10 @@ const removeSyncUtil = (config) => {
 const getPickerUtil = async (config, isUseCache = true) => {
   if (!isUseCache || !pickerUtilCache[config.service]) {
     const { SyncUtil } = await import("./src/assets/lib/kookit-extra.min.mjs");
-    pickerUtilCache[config.service] = new SyncUtil(config.service, config);
+    pickerUtilCache[config.service] = attachWebdavCompat(
+      new SyncUtil(config.service, config),
+      config
+    );
   }
   return pickerUtilCache[config.service];
 };
@@ -196,6 +203,245 @@ const removePickerUtil = (config) => {
   if (pickerUtilCache[config.service]) {
     pickerUtilCache[config.service] = null;
   }
+};
+const ZOTERO_WEBDAV_USER_AGENT = "Zotero/7.0";
+const shouldUseZoteroWebdavCompat = (config = {}) => {
+  if (config.service !== "webdav") {
+    return false;
+  }
+  const clientType = (config.clientType || "").toLowerCase();
+  return (
+    clientType === "zotero" ||
+    /data\.cstcloud\.cn\/dav/i.test(config.url || "")
+  );
+};
+const normalizeCompatPath = (targetPath = "") =>
+  targetPath.replace(/^\/+|\/+$/g, "");
+const getCompatRemoteDir = (baseDir, logicalPath) => {
+  const normalizedPath = normalizeCompatPath(logicalPath);
+  const logicalDir = path.dirname(normalizedPath);
+  if (logicalDir === "." || logicalDir === "") {
+    return baseDir;
+  }
+  return `${baseDir}/${logicalDir}`;
+};
+const getCompatObjectKey = (logicalPath) =>
+  crypto
+    .createHash("md5")
+    .update(normalizeCompatPath(logicalPath))
+    .digest("hex")
+    .slice(0, 8)
+    .toUpperCase();
+const getCompatPaths = (baseDir, logicalPath) => {
+  const remoteDir = getCompatRemoteDir(baseDir, logicalPath);
+  const objectKey = getCompatObjectKey(logicalPath);
+  return {
+    remoteDir,
+    contentPath: `${remoteDir}/${objectKey}.zip`,
+    metadataPath: `${remoteDir}/${objectKey}.prop`,
+  };
+};
+const buildCompatMetadata = (logicalPath, stat) =>
+  JSON.stringify({
+    name: path.basename(normalizeCompatPath(logicalPath)),
+    path: normalizeCompatPath(logicalPath),
+    size: stat.size || 0,
+    modified: new Date(stat.mtimeMs || Date.now()).toISOString(),
+  });
+const parseCompatMetadata = (raw) => {
+  try {
+    const metadata = JSON.parse(raw);
+    if (metadata && typeof metadata.name === "string") {
+      return metadata;
+    }
+  } catch (_) {}
+  return null;
+};
+const attachWebdavCompat = (syncUtil, config) => {
+  if (
+    !shouldUseZoteroWebdavCompat(config) ||
+    !syncUtil ||
+    !syncUtil.remote ||
+    syncUtil.remote.__zoteroCompatPatched
+  ) {
+    return syncUtil;
+  }
+  const remote = syncUtil.remote;
+  remote.__zoteroCompatPatched = true;
+  remote.getClient = async function () {
+    if (!this.webdavClient) {
+      this.url = await this.handleUrlRedirection(this.url);
+      this.webdavClient = this.createClient(this.url, {
+        authType: this.AuthType.Password,
+        username: this.username,
+        password: this.password,
+        headers: {
+          "User-Agent": ZOTERO_WEBDAV_USER_AGENT,
+        },
+      });
+    }
+    return this.webdavClient;
+  };
+  remote.listFiles = async function (currentPath) {
+    const fileInfoList = await this.listFileInfos(currentPath);
+    return fileInfoList.map((item) => item.name);
+  };
+  remote.listFileInfos = async function (currentPath) {
+    const client = await this.getClient();
+    const normalizedPath = normalizeCompatPath(currentPath);
+    const remotePath = normalizedPath ? `${this.dir}/${normalizedPath}` : this.dir;
+    try {
+      const items = await client.getDirectoryContents(remotePath);
+      const directories = items
+        .filter((item) => item.type === "directory")
+        .map((item) => ({
+          name: item.basename,
+          size: 0,
+          type: "folder",
+          modified: item.lastmod,
+        }));
+      const metadataFiles = items.filter(
+        (item) => item.type === "file" && item.basename.endsWith(".prop")
+      );
+      const files = await Promise.all(
+        metadataFiles.map(async (item) => {
+          try {
+            const metadata = parseCompatMetadata(
+              await client.getFileContents(item.filename, { format: "text" })
+            );
+            if (!metadata) {
+              return null;
+            }
+            return {
+              name: metadata.name,
+              size: metadata.size || 0,
+              type: "file",
+              modified: metadata.modified || item.lastmod,
+            };
+          } catch (error) {
+            console.error("Error reading Zotero-compatible metadata:", error);
+            return null;
+          }
+        })
+      );
+      return [...directories, ...files.filter(Boolean)];
+    } catch (error) {
+      if (error.response && error.response.status === 404) {
+        await this.ensureDirectoryExists(remotePath);
+        return [];
+      }
+      console.error("Error listing files:", error);
+      return [];
+    }
+  };
+  remote.uploadFile = async function (sourcePath, destPath) {
+    return this.taskQueue.addTask(() =>
+      this.retryOperation(async () => {
+        try {
+          const client = await this.getClient();
+          const localFilePath = path.join(this.storagePath, sourcePath);
+          if (!fs.existsSync(localFilePath)) {
+            return false;
+          }
+          const stat = fs.statSync(localFilePath);
+          const { remoteDir, contentPath, metadataPath } = getCompatPaths(
+            this.dir,
+            destPath
+          );
+          if ((await client.exists(remoteDir)) === false) {
+            await this.ensureDirectoryExists(remoteDir);
+          }
+          const uploaded = await client.putFileContents(
+            contentPath,
+            fs.createReadStream(localFilePath),
+            {
+              contentLength: stat.size,
+              overwrite: true,
+            }
+          );
+          if (!uploaded) {
+            return false;
+          }
+          await client.putFileContents(
+            metadataPath,
+            buildCompatMetadata(destPath, stat),
+            {
+              overwrite: true,
+            }
+          );
+          return true;
+        } catch (error) {
+          console.error("Error uploading file:", error);
+          return false;
+        }
+      })
+    );
+  };
+  remote.downloadFile = async function (sourcePath, destPath) {
+    return this.taskQueue.addTask(() =>
+      this.retryOperation(async () => {
+        this.taskQueue.setDownloadedSize(0);
+        if (sourcePath.indexOf(".") === -1) {
+          return new ArrayBuffer(0);
+        }
+        try {
+          const client = await this.getClient();
+          const { contentPath } = getCompatPaths(this.dir, sourcePath);
+          if ((await client.exists(contentPath)) === false) {
+            return true;
+          }
+          const localFilePath = path.join(this.storagePath, destPath);
+          fs.mkdirSync(path.dirname(localFilePath), { recursive: true });
+          const output = fs.createWriteStream(localFilePath);
+          const input = client.createReadStream(contentPath);
+          let downloadedSize = 0;
+          input.on("data", (chunk) => {
+            downloadedSize += chunk.length;
+            this.taskQueue.setDownloadedSize(downloadedSize);
+          });
+          return await new Promise((resolve) => {
+            input.on("error", (error) => {
+              console.error("Error occurred during file download:", error);
+              resolve(false);
+            });
+            output.on("error", (error) => {
+              console.error("Error occurred during file download:", error);
+              resolve(false);
+            });
+            output.on("finish", () => resolve(true));
+            input.pipe(output);
+          });
+        } catch (error) {
+          console.error("Error occurred during file download:", error);
+          return false;
+        }
+      })
+    );
+  };
+  remote.deleteFile = async function (targetPath) {
+    return this.taskQueue.addTask(() =>
+      this.retryOperation(async () => {
+        try {
+          const client = await this.getClient();
+          const { contentPath, metadataPath } = getCompatPaths(
+            this.dir,
+            targetPath
+          );
+          if (await client.exists(contentPath)) {
+            await client.deleteFile(contentPath);
+          }
+          if (await client.exists(metadataPath)) {
+            await client.deleteFile(metadataPath);
+          }
+          return true;
+        } catch (error) {
+          console.error("Error deleting file:", error);
+          return false;
+        }
+      })
+    );
+  };
+  return syncUtil;
 };
 // Simple encryption function
 const encrypt = (text, key) => {
